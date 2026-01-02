@@ -324,7 +324,7 @@ def get_dataset_metadata():
     return None
 
 # Step 1: Load full committee dataset (cached indefinitely)
-@st.cache_data
+@st.cache_data(show_spinner=False)  # Disable default spinner to show custom message
 def load_committee_dataset():
     """Fetch all committee data for filtering."""
     try:
@@ -406,7 +406,7 @@ def get_committee_latest_date(committee_name):
         return None
 
 # Step 2: Load committee-specific data
-@st.cache_data(ttl=3600)  # Cache for 1 hour
+@st.cache_data(ttl=3600, show_spinner=False)  # Cache for 1 hour, disable default spinner
 def load_committee_data(committee_name):
     """Fetch all contributions and expenditures for a specific committee."""
     try:
@@ -830,7 +830,8 @@ def get_filter_options(df_committees, current_filters, exclude_filter=None):
     return options, filtered_df
 
 # Load committee dataset
-df_committees = load_committee_dataset()
+with st.spinner("Fetching committee index..."):
+    df_committees = load_committee_dataset()
 
 if df_committees.empty:
     st.error("Unable to load committee data. Please check your connection.")
@@ -1072,18 +1073,8 @@ if st.session_state.selected_committee is None:
         if committee_col:
             result_count = len(filtered_committees[committee_col].dropna().unique())
         
-        # Mobile "View Results" button
-        if st.button(f"View {result_count} Result{'s' if result_count != 1 else ''} 👉", type="primary", use_container_width=True, key="view_results_btn"):
-            # Inject JS to click the collapse button
-            components.html(
-                """
-                <script>
-                    const button = window.parent.document.querySelector('[data-testid="stSidebarCollapseButton"]');
-                    if (button) { button.click(); }
-                </script>
-                """,
-                height=0, width=0
-            )
+        # Static results count message
+        st.markdown(f"**{result_count} Result{'s' if result_count != 1 else ''} Found**")
         
         st.markdown("---")
         
@@ -1137,8 +1128,7 @@ if st.session_state.selected_committee is None:
     if filters_empty:
         # Welcome message
         st.markdown("### ↖️ Start by searching in the sidebar")
-        st.markdown("Filter by committee info. Defaults to statewides with data since 2024")
-        st.markdown("")  # Spacing
+        st.markdown("Filter by committee info. Defaults to statewides with data since 2024. Close the sidebar by clicking arrows at the top")
     
     if committee_col:
         # Get unique committees with their info
@@ -1239,7 +1229,7 @@ elif st.session_state.selected_committee:
     committee_info = df_committees[df_committees[committee_col_detail] == st.session_state.selected_committee].iloc[0] if not df_committees.empty and committee_col_detail else None
     
     # Load committee data
-    with st.spinner(f"Loading data for {st.session_state.selected_committee}..."):
+    with st.spinner("Downloading financial records..."):
         df_contributions, df_expenditures = load_committee_data(st.session_state.selected_committee)
     
     # Process data
@@ -1501,7 +1491,8 @@ elif st.session_state.selected_committee:
     # Latest Data Available line (from unfiltered data, above metrics)
     if latest_data_date_unfiltered:
         st.markdown(f"**Latest Data Available:** {latest_data_date_unfiltered}")
-    else:
+        st.markdown("**↖ Use the sidebar to filter by year or date.**")
+    else: 
         st.markdown("**Latest Data Available:** NO DATA")
     
     # Calculate Cash on Hand to match Ending COH
@@ -2033,12 +2024,13 @@ elif st.session_state.selected_committee:
         st.subheader("📄 PDF Report")
         try:
             coh_data_for_pdf = st.session_state.get('coh_data_for_pdf', None)
-            pdf_buffer = generate_pdf_report(
-                name, committee_info, total_raised, total_spent, cash_on_hand,
-                latest_data_date_unfiltered, df_contributions_filtered, df_expenditures_filtered,
-                coh_data_for_pdf, starting_coh, ending_coh, amount_col_contrib, amount_col_expend,
-                candidate_name=name, earliest_date=earliest_date, latest_date=latest_date
-            )
+            with st.spinner("Compiling PDF report..."):
+                pdf_buffer = generate_pdf_report(
+                    name, committee_info, total_raised, total_spent, cash_on_hand,
+                    latest_data_date_unfiltered, df_contributions_filtered, df_expenditures_filtered,
+                    coh_data_for_pdf, starting_coh, ending_coh, amount_col_contrib, amount_col_expend,
+                    candidate_name=name, earliest_date=earliest_date, latest_date=latest_date
+                )
             st.download_button(
                 label="Download Report",
                 data=pdf_buffer.getvalue(),
