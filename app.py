@@ -347,7 +347,7 @@ def get_committees_with_data_since(min_date):
             "smfg-ds7h",
             select="DISTINCT committee_nm",
             where=f"date >= '{date_str}'",
-            limit=500000
+            limit=200000
         )
         # Extract committee names from results
         committee_names = set()
