@@ -14,6 +14,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from io import BytesIO
 import os
+import time
 
 # Constants
 DEFAULT_START_DATE = date(2024, 1, 1)
@@ -293,7 +294,9 @@ except Exception as e:
     if socrata_token is None:
         st.warning("⚠️ Socrata token not found. Please set SOCRATA_TOKEN in secrets or environment variables.")
 
-client = Socrata("data.iowa.gov", app_token=socrata_token, timeout=60)
+# Initialize Socrata client with increased timeout and retry support
+# Increased timeout to handle large datasets on Streamlit Cloud
+client = Socrata("data.iowa.gov", app_token=socrata_token, timeout=120)
 
 # Initialize session state
 if 'selected_committee' not in st.session_state:
@@ -326,38 +329,75 @@ def get_dataset_metadata():
 # Step 1: Load full committee dataset (cached indefinitely)
 @st.cache_data
 def load_committee_dataset():
-    """Fetch all committee data for filtering."""
-    try:
-        results = client.get("5dtu-swbk", select="*", limit=500000)
-        df = pd.DataFrame.from_records(results)
-        return df
-    except Exception as e:
-        st.error(f"Error loading committee dataset: {str(e)}")
-        return pd.DataFrame()
+    """Fetch all committee data for filtering with retry logic."""
+    max_retries = 3
+    retry_delay = 2  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            results = client.get("5dtu-swbk", select="*", limit=500000)
+            df = pd.DataFrame.from_records(results)
+            if not df.empty:
+                return df
+            else:
+                # Empty result, but no error - might be valid
+                return df
+        except (ConnectionError, requests.exceptions.ConnectionError, OSError) as e:
+            # Connection errors - retry with exponential backoff
+            if attempt < max_retries - 1:
+                wait_time = retry_delay * (2 ** attempt)  # Exponential backoff: 2s, 4s, 8s
+                time.sleep(wait_time)
+                continue
+            else:
+                st.error(f"Could not fetch committees after {max_retries} attempts: {str(e)}")
+                return pd.DataFrame()
+        except Exception as e:
+            # Other errors - don't retry, just return empty
+            st.error(f"Error loading committee dataset: {str(e)}")
+            return pd.DataFrame()
+    
+    return pd.DataFrame()
 
 # Server-side filtering: Get committees with data since a given date
 @st.cache_data(ttl=3600)
 def get_committees_with_data_since(min_date):
-    """Get list of committees that have published data since the given date."""
-    try:
-        # Format date for Socrata query
-        date_str = min_date.strftime('%Y-%m-%dT00:00:00')
-        # Query for distinct committee names with date >= min_date
-        results = client.get(
-            "smfg-ds7h",
-            select="DISTINCT committee_nm",
-            where=f"date >= '{date_str}'",
-            limit=500000
-        )
-        # Extract committee names from results
-        committee_names = set()
-        for record in results:
-            if 'committee_nm' in record and record['committee_nm']:
-                committee_names.add(record['committee_nm'])
-        return list(committee_names)
-    except Exception as e:
-        st.warning(f"Could not fetch committees: {str(e)}")
-        return []
+    """Get list of committees that have published data since the given date with retry logic."""
+    max_retries = 3
+    retry_delay = 2  # seconds
+    
+    # Format date for Socrata query
+    date_str = min_date.strftime('%Y-%m-%dT00:00:00')
+    
+    for attempt in range(max_retries):
+        try:
+            # Query for distinct committee names with date >= min_date
+            results = client.get(
+                "smfg-ds7h",
+                select="DISTINCT committee_nm",
+                where=f"date >= '{date_str}'",
+                limit=500000
+            )
+            # Extract committee names from results
+            committee_names = set()
+            for record in results:
+                if 'committee_nm' in record and record['committee_nm']:
+                    committee_names.add(record['committee_nm'])
+            return list(committee_names)
+        except (ConnectionError, requests.exceptions.ConnectionError, OSError) as e:
+            # Connection errors - retry with exponential backoff
+            if attempt < max_retries - 1:
+                wait_time = retry_delay * (2 ** attempt)  # Exponential backoff: 2s, 4s, 8s
+                time.sleep(wait_time)
+                continue
+            else:
+                st.warning(f"Could not fetch committees after {max_retries} attempts: {str(e)}")
+                return []
+        except Exception as e:
+            # Other errors - don't retry, just return empty
+            st.warning(f"Could not fetch committees: {str(e)}")
+            return []
+    
+    return []
 
 # Helper function to get latest data date for a committee
 @st.cache_data(ttl=3600)
@@ -408,31 +448,48 @@ def get_committee_latest_date(committee_name):
 # Step 2: Load committee-specific data
 @st.cache_data(ttl=3600)  # Cache for 1 hour
 def load_committee_data(committee_name):
-    """Fetch all contributions and expenditures for a specific committee."""
-    try:
-        # Escape single quotes in committee name for SoQL query
-        escaped_name = committee_name.replace("'", "''")
-        
-        # Fetch contributions
-        contributions_query = f"committee_nm='{escaped_name}'"
-        contributions = client.get("smfg-ds7h", 
-                                   where=contributions_query, 
-                                   select="*",
-                                   limit=500000)
-        df_contributions = pd.DataFrame.from_records(contributions)
-        
-        # Fetch expenditures
-        expenditures_query = f"committee_nm='{escaped_name}'"
-        expenditures = client.get("3adi-mht4", 
-                                  where=expenditures_query, 
-                                  select="*",
-                                  limit=500000)
-        df_expenditures = pd.DataFrame.from_records(expenditures)
-        
-        return df_contributions, df_expenditures
-    except Exception as e:
-        st.error(f"Error loading committee data: {str(e)}")
-        return pd.DataFrame(), pd.DataFrame()
+    """Fetch all contributions and expenditures for a specific committee with retry logic."""
+    max_retries = 3
+    retry_delay = 2  # seconds
+    
+    # Escape single quotes in committee name for SoQL query
+    escaped_name = committee_name.replace("'", "''")
+    
+    for attempt in range(max_retries):
+        try:
+            # Fetch contributions
+            contributions_query = f"committee_nm='{escaped_name}'"
+            contributions = client.get("smfg-ds7h", 
+                                       where=contributions_query, 
+                                       select="*",
+                                       limit=500000)
+            df_contributions = pd.DataFrame.from_records(contributions)
+            
+            # Fetch expenditures
+            expenditures_query = f"committee_nm='{escaped_name}'"
+            expenditures = client.get("3adi-mht4", 
+                                      where=expenditures_query, 
+                                      select="*",
+                                      limit=500000)
+            df_expenditures = pd.DataFrame.from_records(expenditures)
+            
+            return df_contributions, df_expenditures
+            
+        except (ConnectionError, requests.exceptions.ConnectionError, OSError) as e:
+            # Connection errors - retry with exponential backoff
+            if attempt < max_retries - 1:
+                wait_time = retry_delay * (2 ** attempt)  # Exponential backoff: 2s, 4s, 8s
+                time.sleep(wait_time)
+                continue
+            else:
+                st.error(f"Could not fetch committee data after {max_retries} attempts: {str(e)}")
+                return pd.DataFrame(), pd.DataFrame()
+        except Exception as e:
+            # Other errors - don't retry, just return empty
+            st.error(f"Error loading committee data: {str(e)}")
+            return pd.DataFrame(), pd.DataFrame()
+    
+    return pd.DataFrame(), pd.DataFrame()
 
 def process_contributions(df):
     """Process contributions dataframe."""
