@@ -17,6 +17,10 @@ import os
 # Constants
 DEFAULT_START_DATE = date(2024, 1, 1)
 
+# Theme colors (matching .streamlit/config.toml)
+THEME_PRIMARY_COLOR = "#2E8B57"  # SeaGreen
+THEME_PRIMARY_DARK = "#1F5F3F"   # Darker green for gradients/borders
+
 # Page configuration
 st.set_page_config(
     page_title="Peter's IA $ App",
@@ -25,273 +29,210 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better aesthetics
-st.markdown("""
+# Custom CSS for better aesthetics - using theme colors
+# Use THEME_PRIMARY_COLOR defined above
+THEME_COLOR_DARK = "#3CB371"  # Lighter green for gradient end
+
+st.markdown(f"""
 <style>
-    /* Remove top padding and white space - aggressive reduction */
-    .main .block-container {
+    /* --- RESET & BASIC SETUP --- */
+    .main .block-container {{
         padding-top: 0.5rem !important;
         padding-bottom: 1.5rem !important;
         max-width: 95%;
-    }
+    }}
     
     /* Remove extra padding from first element */
-    .main .block-container > div:first-child {
+    .main .block-container > div:first-child {{
         padding-top: 0 !important;
         margin-top: 0 !important;
-    }
+    }}
+
+    /* --- SIDEBAR FIXES --- */
+    /* Restore default sidebar behavior (collapsible) */
+    section[data-testid="stSidebar"] {{
+        top: 0 !important; /* Reset top to avoid gaps */
+        padding-top: 70px !important; /* Push content down to match top bar */
+        background-color: #f8f9fa;
+        z-index: 998;
+    }}
+
+    /* Reduce padding at the very top of the sidebar content */
+    section[data-testid="stSidebar"] .block-container {{
+        padding-top: 1rem !important;
+        padding-bottom: 0rem !important;
+    }}
     
-    /* Hide Streamlit's default header but keep sidebar functionality */
-    header[data-testid="stHeader"] {
-        display: none !important;
-    }
+    /* Tighten space between sidebar widgets */
+    section[data-testid="stSidebar"] .stElementContainer {{
+        margin-bottom: -0.5rem !important;
+    }}
     
-    /* Also hide the header container */
-    .stApp > header {
-        display: none !important;
-    }
+    /* Remove padding around the 'Search' header */
+    div[data-testid="stSidebarHeader"] {{
+        padding-bottom: 0rem !important;
+    }}
     
-    /* Hide the hamburger menu and other header elements */
-    #MainMenu {
+    /* Reduce Sidebar Header/Content Padding */
+    div[data-testid="stSidebarContent"] {{
+        padding-top: 0rem !important;
+    }}
+    
+    /* --- HEADER & NAVIGATION FIXES (MOBILE) --- */
+    /* Make header transparent but clickable (restores Hamburger Menu) */
+    header[data-testid="stHeader"] {{
+        background: transparent !important;
+        z-index: 1001 !important; /* Above custom top bar */
+        height: 70px !important;
+    }}
+    
+    /* Hide the red/orange decoration line */
+    header[data-testid="stHeader"] .decoration {{
+        display: none;
+    }}
+
+    /* Hide the 3-dots menu if desired, but KEEP the hamburger */
+    #MainMenu {{
         visibility: hidden;
-    }
+    }}
     
-    /* Ensure the sidebar container exists and is visible */
-    [data-testid="stSidebar"] {
-        position: relative !important;
-    }
-    
-    /* Make sure sidebar backdrop/overlay doesn't interfere */
-    .stApp > div:first-child {
-        display: flex !important;
-    }
-    
-    /* Sidebar toggle button styling in top bar */
-    #sidebar-toggle:hover {
-        background: rgba(255,255,255,0.3) !important;
-    }
-    
-    /* Custom top bar styling - true top bar above everything */
-    .top-bar {
+    /* --- CUSTOM TOP BAR --- */
+    .top-bar {{
         position: fixed;
         top: 0;
         left: 0;
         right: 0;
         width: 100%;
-        background: linear-gradient(135deg, #1f77b4 0%, #2c92d5 100%);
+        height: 70px;
+        background: linear-gradient(135deg, {THEME_PRIMARY_COLOR} 0%, {THEME_COLOR_DARK} 100%); /* Green Theme */
         color: white;
-        padding: 1rem 2rem;
+        padding: 0 1rem;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        border-bottom: 2px solid #1565a0;
+        border-bottom: 2px solid #228B22;
         z-index: 1000;
-    }
+        display: flex;
+        align-items: center;
+    }}
     
-    .top-bar-content {
+    .top-bar-content {{
         display: flex;
         justify-content: space-between;
         align-items: center;
-        max-width: 100%;
-        margin: 0 auto;
-    }
+        width: 100%;
+        height: 100%;
+    }}
     
-    .top-bar-title {
+    .top-bar-title {{
         font-size: 1.5rem;
         font-weight: 700;
         margin: 0;
-        cursor: pointer;
-        transition: opacity 0.2s;
-    }
+        white-space: nowrap;
+        margin-left: 3.5rem; /* Space for Hamburger Menu */
+    }}
     
-    .top-bar-title:hover {
-        opacity: 0.8;
-    }
-    
-    .top-bar-center {
+    .top-bar-center {{
         flex: 1;
         display: flex;
         justify-content: center;
         align-items: center;
-    }
+    }}
     
-    .top-bar-info {
+    .top-bar-info {{
         display: flex;
         gap: 2rem;
         align-items: center;
         font-size: 0.9rem;
-    }
+    }}
     
-    .top-bar-page {
+    .top-bar-page {{
         background-color: rgba(255,255,255,0.2);
         padding: 0.4rem 0.8rem;
         border-radius: 4px;
         font-weight: 500;
-    }
+        white-space: nowrap;
+    }}
     
-    .top-bar-update {
+    .top-bar-update {{
         color: rgba(255,255,255,0.9);
-    }
+    }}
+
+    /* --- RESPONSIVE / MOBILE TWEAKS --- */
+    @media (max-width: 640px) {{
+        .top-bar-title {{
+            font-size: 1.1rem;
+            margin-left: 3rem; 
+        }}
+        .top-bar-update {{
+            display: none; /* Hide update time on mobile */
+        }}
+        .top-bar-page {{
+            font-size: 0.8rem;
+            padding: 0.2rem 0.5rem;
+        }}
+        /* Ensure main content isn't covered */
+        .main .block-container {{
+            padding-top: 80px !important;
+        }}
+    }}
+
+    /* --- GENERAL STYLING --- */
+    [data-testid="stMetricValue"] {{
+        font-size: 1.8rem;
+        font-weight: 600;
+    }}
     
-    /* Adjust main content to account for fixed top bar - minimal padding */
-    .main .block-container {
-        padding-top: calc(0.5rem + 70px) !important;
-    }
-    
-    /* Adjust sidebar to account for top bar and ensure it's visible */
-    section[data-testid="stSidebar"] {
-        padding-top: 70px !important;
-        z-index: 999;
-    }
-    
-    /* Force sidebar to be visible - override any hidden states */
-    section[data-testid="stSidebar"],
-    section[data-testid="stSidebar"][aria-expanded="false"],
-    .stApp[data-sidebar-state="collapsed"] section[data-testid="stSidebar"] {
-        display: block !important;
-        visibility: visible !important;
-        transform: translateX(0) !important;
-        width: 21rem !important;
-        min-width: 21rem !important;
-    }
-    
-    /* Ensure sidebar content is visible */
-    section[data-testid="stSidebar"] > div {
-        display: block !important;
-        visibility: visible !important;
-    }
-    
-    /* Compact search results - remove extra spacing */
-    div[data-testid="stVerticalBlock"] > div[style*="flex"] {
-        padding: 0.1rem 0;
-    }
-    
-    /* Reduce button padding for compact results */
-    button[kind="secondary"] {
-        padding: 0.4rem 1rem !important;
-        margin: 0.15rem 0 !important;
-        min-height: auto !important;
-        height: auto !important;
-    }
-    
-    /* Remove extra spacing between buttons */
-    .stButton {
-        margin-bottom: 0.2rem !important;
-    }
+    footer[data-testid="stFooter"] {{
+        display: none !important;
+    }}
     
     /* Better button styling */
-    .stButton > button {
+    .stButton > button {{
         border-radius: 6px;
         transition: all 0.2s ease;
         border: 1px solid #dee2e6;
         background-color: #ffffff;
-    }
+    }}
     
-    .stButton > button:hover {
+    .stButton > button:hover {{
         transform: translateY(-1px);
         box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-        border-color: #1f77b4;
-    }
+        border-color: {THEME_PRIMARY_COLOR};
+    }}
     
-    /* Compact sidebar */
-    .css-1d391kg {
-        padding-top: 1.5rem;
-    }
-    
-    /* Better metric display */
-    [data-testid="stMetricValue"] {
-        font-size: 2rem;
-        font-weight: 600;
-    }
+    /* Better card appearance for committees */
+    .committee-card {{
+        border-left: 3px solid {THEME_PRIMARY_COLOR};
+        padding-left: 12px;
+    }}
     
     /* Remove extra spacing in tabs */
-    .stTabs [data-baseweb="tab-list"] {
+    .stTabs [data-baseweb="tab-list"] {{
         gap: 8px;
         margin-top: 0 !important;
         padding-top: 0 !important;
-    }
+    }}
     
     /* Remove grey bar/divider above tabs */
-    .stTabs > div:first-child {
+    .stTabs > div:first-child {{
         border-top: none !important;
         margin-top: 0 !important;
         padding-top: 0 !important;
-    }
+    }}
     
     /* Remove any horizontal rules before tabs */
-    hr {
+    hr {{
         display: none !important;
-    }
-    
-    /* Remove divider elements before tabs */
-    div[data-testid="stHorizontalBlock"]:has(+ .stTabs) {
-        border-top: none !important;
-    }
-    
-    /* Compact search results */
-    div[data-testid="stVerticalBlock"] > div[style*="flex"] {
-        padding: 0.25rem 0;
-    }
-    
-    /* Better selectbox styling */
-    .stSelectbox > div > div {
-        background-color: white;
-    }
-    
-    /* Improve spacing in sidebar */
-    section[data-testid="stSidebar"] {
-        background-color: #f8f9fa;
-    }
-    
-    /* Better card appearance for committees */
-    .committee-card {
-        border-left: 3px solid #1f77b4;
-        padding-left: 12px;
-    }
+    }}
     
     /* Reduce spacing between search results and metrics */
-    [data-testid="stMetricContainer"] {
+    [data-testid="stMetricContainer"] {{
         margin-bottom: 0.5rem !important;
-    }
+    }}
     
-    /* Reduce spacing in search results */
-    div[data-testid="stVerticalBlock"] > div[style*="flex"] {
-        padding: 0.1rem 0 !important;
-    }
-    
-    /* Hide Streamlit footer if present */
-    footer[data-testid="stFooter"] {
-        display: none !important;
-    }
-    
-    /* Reduce spacing in header columns */
-    div[data-testid="column"] {
-        padding: 0.25rem !important;
-    }
-    
-    /* Shrink Header Padding */
-    .block-container {
-        padding-top: 2rem !important;
-    }
-    
-    /* Reduce Sidebar Header/Content Padding */
-    div[data-testid="stSidebarContent"] {
-        padding-top: 0rem !important;
-    }
-    
-    /* Reduce padding at the very top of the sidebar */
-    section[data-testid="stSidebar"] .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 0rem !important;
-    }
-    
-    /* Tighten space between sidebar widgets */
-    section[data-testid="stSidebar"] .stElementContainer {
-        margin-bottom: -0.5rem !important;
-    }
-    
-    /* Remove padding around the 'Search' header */
-    div[data-testid="stSidebarHeader"] {
-        padding-bottom: 0rem !important;
-    }
+    /* Adjust main content to account for fixed top bar */
+    .main .block-container {{
+        padding-top: calc(0.5rem + 70px) !important;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -518,7 +459,7 @@ def generate_pdf_report(committee_name, committee_info, total_raised, total_spen
         'CustomTitle',
         parent=styles['Heading1'],
         fontSize=24,
-        textColor=colors.HexColor('#1f77b4'),
+        textColor=colors.HexColor(THEME_PRIMARY_COLOR),
         spaceAfter=30,
         alignment=TA_CENTER
     )
@@ -630,7 +571,7 @@ def generate_pdf_report(committee_name, committee_info, total_raised, total_spen
     ]
     summary_table = Table(summary_data, colWidths=[3*inch, 2*inch])
     summary_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(THEME_PRIMARY_COLOR)),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -662,7 +603,7 @@ def generate_pdf_report(committee_name, committee_info, total_raised, total_spen
             ])
         coh_table = Table(coh_data, colWidths=[0.8*inch, 1.5*inch, 1.5*inch, 1.2*inch, 1.5*inch])
         coh_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(THEME_PRIMARY_COLOR)),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -1059,19 +1000,19 @@ if st.session_state.selected_committee is None:
         
         # Disclaimer and copyright
         st.markdown(
-            "<p style='color: #000000; font-size: 0.85rem;'>Disclaimer: Dev mode. Data from public sources.</p>",
+            "<p style='color: #000000; font-size: 0.85rem; line-height: 1.3;'>App Under Development, please excuse any errors or issues. Data Source: Data.Iowa.Gov.</p>",
             unsafe_allow_html=True
         )
         st.markdown(
-            "<p style='color: #000000; font-size: 0.85rem;'>© Peter Owens 2026</p>",
+            "<p style='color: #000000; font-size: 0.85rem; line-height: 1.3;'>© Peter Owens 2026</p>",
             unsafe_allow_html=True
         )
         
         # Links
         st.markdown(
-            "<small style='color: #000000;'>"
-            "<a href='https://x.com/pcowens_' target='_blank' style='color: #1f77b4; text-decoration: none; margin-right: 0.5rem;'>X (Twitter)</a> | "
-            "<a href='mailto:16petero@gmail.com' style='color: #1f77b4; text-decoration: none; margin-left: 0.5rem;'>Email</a>"
+            f"<small style='color: #000000;'>"
+            f"<a href='https://x.com/pcowens_' target='_blank' style='color: {THEME_PRIMARY_COLOR}; text-decoration: none; margin-right: 0.5rem;'>X (Twitter)</a> | "
+            f"<a href='mailto:16petero@gmail.com' style='color: {THEME_PRIMARY_COLOR}; text-decoration: none; margin-left: 0.5rem;'>Email</a>"
             "</small>",
             unsafe_allow_html=True
         )
@@ -1279,19 +1220,19 @@ elif st.session_state.selected_committee:
         
         # Disclaimer and copyright
         st.markdown(
-            "<p style='color: #000000; font-size: 0.85rem;'>Disclaimer: Dev mode. Data from public sources.</p>",
+            "<p style='color: #000000; font-size: 0.85rem; line-height: 1.3;'>App Under Development, please excuse any errors or issues. Data Source: Data.Iowa.Gov.</p>",
             unsafe_allow_html=True
         )
         st.markdown(
-            "<p style='color: #000000; font-size: 0.85rem;'>© Peter Owens 2026</p>",
+            "<p style='color: #000000; font-size: 0.85rem; line-height: 1.3;'>© Peter Owens 2026</p>",
             unsafe_allow_html=True
         )
         
         # Links
         st.markdown(
-            "<small style='color: #000000;'>"
-            "<a href='https://x.com/pcowens_' target='_blank' style='color: #1f77b4; text-decoration: none; margin-right: 0.5rem;'>X (Twitter)</a> | "
-            "<a href='mailto:16petero@gmail.com' style='color: #1f77b4; text-decoration: none; margin-left: 0.5rem;'>Email</a>"
+            f"<small style='color: #000000;'>"
+            f"<a href='https://x.com/pcowens_' target='_blank' style='color: {THEME_PRIMARY_COLOR}; text-decoration: none; margin-right: 0.5rem;'>X (Twitter)</a> | "
+            f"<a href='mailto:16petero@gmail.com' style='color: {THEME_PRIMARY_COLOR}; text-decoration: none; margin-left: 0.5rem;'>Email</a>"
             "</small>",
             unsafe_allow_html=True
         )
@@ -1753,7 +1694,8 @@ elif st.session_state.selected_committee:
                             y=state_donor_counts.index,
                             orientation='h',
                             labels={'x': 'Number of Donors', 'y': 'State'},
-                            title="Top 5 States by Number of Donors"
+                            title="Top 5 States by Number of Donors",
+                            color_discrete_sequence=[THEME_PRIMARY_COLOR]
                         )
                         annotations = []
                         for state, count in state_donor_counts.items():
@@ -1787,7 +1729,8 @@ elif st.session_state.selected_committee:
                             y=state_totals.index,
                             orientation='h',
                             labels={'x': 'Total Donations ($)', 'y': 'State'},
-                            title="Top 5 States by Sum of Donations"
+                            title="Top 5 States by Sum of Donations",
+                            color_discrete_sequence=[THEME_PRIMARY_COLOR]
                         )
                         annotations = []
                         for state, amount in state_totals.items():
@@ -1829,7 +1772,8 @@ elif st.session_state.selected_committee:
                             y=top_donors['Donor'].values,
                             orientation='h',
                             labels={'x': 'Total Donations ($)', 'y': 'Donor'},
-                            title="Top 5 Donors by Sum of Donations"
+                            title="Top 5 Donors by Sum of Donations",
+                            color_discrete_sequence=[THEME_PRIMARY_COLOR]
                         )
                         annotations = []
                         for _, row in top_donors.iterrows():
@@ -1860,7 +1804,8 @@ elif st.session_state.selected_committee:
                             y=top_donors.index,
                             orientation='h',
                             labels={'x': 'Total Donations ($)', 'y': 'Donor'},
-                            title="Top 5 Donors by Sum of Donations"
+                            title="Top 5 Donors by Sum of Donations",
+                            color_discrete_sequence=[THEME_PRIMARY_COLOR]
                         )
                         annotations = []
                         for donor, amount in top_donors.items():
@@ -1896,7 +1841,7 @@ elif st.session_state.selected_committee:
                             labels={'x': 'Month', 'y': 'Total Donations ($)'},
                             title="Donations Over Time (Monthly)"
                         )
-                        fig_timeline.update_traces(mode='lines+markers', line=dict(width=3, color='#1f77b4'))
+                        fig_timeline.update_traces(mode='lines+markers', line=dict(width=3, color=THEME_PRIMARY_COLOR))
                         fig_timeline.update_layout(
                             hovermode='x unified',
                             plot_bgcolor='white',
@@ -1941,7 +1886,8 @@ elif st.session_state.selected_committee:
                             y=top_recipients.index,
                             orientation='h',
                             labels={'x': 'Total Expenditures ($)', 'y': 'Recipient'},
-                            title="Top 5 Expenditure Recipients"
+                            title="Top 5 Expenditure Recipients",
+                            color_discrete_sequence=[THEME_PRIMARY_COLOR]
                         )
                         annotations = []
                         for recipient, amount in top_recipients.items():
@@ -2036,3 +1982,16 @@ elif st.session_state.selected_committee:
             )
         else:
             st.warning("No expenditure data available for export.")
+    
+    # Footer at bottom of main page
+    st.markdown("<hr style='margin-top: 3rem; margin-bottom: 1rem; border: 0; border-top: 1px solid #e0e0e0;'>", unsafe_allow_html=True)
+    st.markdown(
+        "<p style='color: #666; font-size: 0.85rem; text-align: center; line-height: 1.5;'>App Under Development, please excuse any errors or issues. Data Source: Data.Iowa.Gov.</p>",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        f"<p style='color: #666; font-size: 0.85rem; text-align: center; line-height: 1.5;'>© Peter Owens 2026 | "
+        f"<a href='https://x.com/pcowens_' target='_blank' style='color: {THEME_PRIMARY_COLOR}; text-decoration: none;'>X (Twitter)</a> | "
+        f"<a href='mailto:16petero@gmail.com' style='color: {THEME_PRIMARY_COLOR}; text-decoration: none;'>Email</a></p>",
+        unsafe_allow_html=True
+    )
