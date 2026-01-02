@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 from sodapy import Socrata
 from datetime import datetime, date
@@ -16,6 +17,16 @@ import os
 
 # Constants
 DEFAULT_START_DATE = date(2024, 1, 1)
+
+# Committee Categories Mapping
+COMMITTEE_CATEGORIES = {
+    "Statewide": ["Governor", "Attorney General", "Auditor of State", "Secretary of State", "Secretary of Agriculture", "Treasurer of State"],
+    "Legislature": ["State House", "State Senate"],
+    "City": ["City Candidate - City Council", "City Candidate - Mayor"],
+    "County": ["County Candidate - Attorney", "County Candidate - Auditor", "County Candidate - Recorder", "County Candidate - Sheriff", "County Candidate - Supervisor", "County Candidate - Treasurer"],
+    "PAC": ["City PAC", "Iowa PAC", "County PAC"],
+    "Other": ["Other Political Subdivision Candidate", "School Board Candidate", "School Board or Other Political Subdivision PAC", "State Central Committee", "Local Ballot Issue"]
+}
 
 # Theme colors (matching .streamlit/config.toml)
 THEME_PRIMARY_COLOR = "#2E8B57"  # SeaGreen
@@ -185,18 +196,47 @@ st.markdown(f"""
         display: none !important;
     }}
     
-    /* Better button styling */
+    /* Better button styling - Green theme for all buttons */
     .stButton > button {{
         border-radius: 6px;
         transition: all 0.2s ease;
-        border: 1px solid #dee2e6;
-        background-color: #ffffff;
+        border: 1px solid {THEME_PRIMARY_COLOR};
+        background-color: {THEME_PRIMARY_COLOR};
+        color: white !important;
     }}
     
     .stButton > button:hover {{
         transform: translateY(-1px);
         box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-        border-color: {THEME_PRIMARY_COLOR};
+        background-color: {THEME_COLOR_DARK};
+        border-color: {THEME_COLOR_DARK};
+        color: white !important;
+    }}
+    
+    /* Ensure primary buttons also use green */
+    button[kind="primary"] {{
+        background-color: {THEME_PRIMARY_COLOR} !important;
+        color: white !important;
+        border-color: {THEME_PRIMARY_COLOR} !important;
+    }}
+    
+    button[kind="primary"]:hover {{
+        background-color: {THEME_COLOR_DARK} !important;
+        border-color: {THEME_COLOR_DARK} !important;
+        color: white !important;
+    }}
+    
+    /* Secondary buttons also use green */
+    button[kind="secondary"] {{
+        background-color: {THEME_PRIMARY_COLOR} !important;
+        color: white !important;
+        border-color: {THEME_PRIMARY_COLOR} !important;
+    }}
+    
+    button[kind="secondary"]:hover {{
+        background-color: {THEME_COLOR_DARK} !important;
+        border-color: {THEME_COLOR_DARK} !important;
+        color: white !important;
     }}
     
     /* Better card appearance for committees */
@@ -627,23 +667,75 @@ def generate_pdf_report(committee_name, committee_info, total_raised, total_spen
     buffer.seek(0)
     return buffer
 
+def get_committee_types_from_categories(categories):
+    """Convert category selections to list of committee types.
+    Handles 'Other' category specially to include catch-all types."""
+    if not categories:
+        return []
+    
+    if not isinstance(categories, list):
+        categories = [categories] if categories else []
+    
+    committee_types = []
+    all_known_types = set()
+    
+    # Collect all known types from defined categories
+    for cat_types in COMMITTEE_CATEGORIES.values():
+        all_known_types.update(cat_types)
+    
+    for category in categories:
+        if category == "Other":
+            # Include the explicit "Other" types
+            committee_types.extend(COMMITTEE_CATEGORIES["Other"])
+            # Also need to find types not in other categories (handled in filtering)
+        else:
+            # Add types from this category
+            if category in COMMITTEE_CATEGORIES:
+                committee_types.extend(COMMITTEE_CATEGORIES[category])
+    
+    return list(set(committee_types))  # Remove duplicates
+
 def get_filter_options(df_committees, current_filters, exclude_filter=None):
     """Get available filter options based on current selections.
     exclude_filter: name of filter to exclude from filtering (so it shows all options)"""
     filtered_df = df_committees.copy()
     
     # Apply existing filters progressively, but exclude the filter we're getting options for
-    if current_filters.get('committee_type') and exclude_filter != 'committee_type':
-        # Handle both single value (old) and list (new multiselect)
-        committee_types = current_filters['committee_type']
-        if not isinstance(committee_types, list):
-            committee_types = [committee_types] if committee_types else []
+    if current_filters.get('category') and exclude_filter != 'category':
+        # Convert categories to committee types
+        selected_categories = current_filters['category']
+        if not isinstance(selected_categories, list):
+            selected_categories = [selected_categories] if selected_categories else []
         
-        if committee_types:
-            for col in ['committee_type', 'type', 'type_nm', 'committee_type_nm']:
-                if col in filtered_df.columns:
-                    filtered_df = filtered_df[filtered_df[col].astype(str).isin([str(ct) for ct in committee_types])]
-                    break
+        if selected_categories:
+            # Get committee types from selected categories
+            committee_types = get_committee_types_from_categories(selected_categories)
+            
+            # Handle "Other" category - include types not in other categories
+            if "Other" in selected_categories:
+                # Get all known types from defined categories
+                all_known_types = set()
+                for cat_types in COMMITTEE_CATEGORIES.values():
+                    all_known_types.update(cat_types)
+                
+                # Find committee type column
+                type_col = None
+                for col in ['committee_type', 'type', 'type_nm', 'committee_type_nm']:
+                    if col in filtered_df.columns:
+                        type_col = col
+                        break
+                
+                if type_col:
+                    # Add types that are not in any defined category
+                    all_types_in_data = set(filtered_df[type_col].dropna().astype(str).unique())
+                    other_types = all_types_in_data - all_known_types
+                    committee_types.extend(list(other_types))
+            
+            if committee_types:
+                for col in ['committee_type', 'type', 'type_nm', 'committee_type_nm']:
+                    if col in filtered_df.columns:
+                        filtered_df = filtered_df[filtered_df[col].astype(str).isin([str(ct) for ct in committee_types])]
+                        break
     
     if current_filters.get('election_year') and exclude_filter != 'election_year':
         # Try different possible column names
@@ -765,7 +857,7 @@ current_page = "Committee View" if st.session_state.selected_committee else "Com
 top_bar_html = f"""
 <div class="top-bar">
     <div class="top-bar-content">
-        <div class="top-bar-title">Peter's IA Finance App</div>
+        <div class="top-bar-title"><a href="?home=true" target="_self" style="text-decoration: none; color: white;">Peter's IA Finance App</a></div>
         <div class="top-bar-center">
             <div class="top-bar-page">{current_page}</div>
         </div>
@@ -777,6 +869,7 @@ top_bar_html = f"""
 """
 # Render top bar
 st.markdown(top_bar_html, unsafe_allow_html=True)
+
 
 # Check for home navigation via query params
 if st.query_params.get("home") == "true":
@@ -791,17 +884,8 @@ if st.session_state.selected_committee is None:
     
     # Initialize filters in session state
     if 'filters' not in st.session_state:
-        # Default committee types for multiselect
-        default_committee_types = [
-            "Governor",
-            "Attorney General",
-            "Auditor of State",
-            "Secretary of Agriculture",
-            "Secretary of State",
-            "Treasurer of State"
-        ]
         st.session_state.filters = {
-            'committee_type': default_committee_types,  # Now a list for multiselect
+            'category': ["Statewide"],  # Default to Statewide category
             'election_year': None,
             'party': None,
             'office': None,
@@ -830,16 +914,8 @@ if st.session_state.selected_committee is None:
             st.write("")  # Spacer
             if st.button("Clear", use_container_width=True, key="clear_filters_btn_inline"):
                 # Reset all filters
-                default_committee_types = [
-                    "Governor",
-                    "Attorney General",
-                    "Auditor of State",
-                    "Secretary of Agriculture",
-                    "Secretary of State",
-                    "Treasurer of State"
-                ]
                 st.session_state.filters = {
-                    'committee_type': default_committee_types,
+                    'category': ["Statewide"],
                     'election_year': None,
                     'party': None,
                     'office': None,
@@ -889,7 +965,7 @@ if st.session_state.selected_committee is None:
                 ]
         
         # Get filter options for each dropdown (excluding itself from filtering)
-        filter_options_type, _ = get_filter_options(df_committees_filtered, st.session_state.filters, exclude_filter='committee_type')
+        filter_options_category, _ = get_filter_options(df_committees_filtered, st.session_state.filters, exclude_filter='category')
         filter_options_party, _ = get_filter_options(df_committees_filtered, st.session_state.filters, exclude_filter='party')
         filter_options_office, _ = get_filter_options(df_committees_filtered, st.session_state.filters, exclude_filter='office')
         filter_options_district, _ = get_filter_options(df_committees_filtered, st.session_state.filters, exclude_filter='district')
@@ -899,35 +975,24 @@ if st.session_state.selected_committee is None:
         # Track if any filter changed
         filter_changed = False
         
-        committee_type_options = filter_options_type.get('committee_type', [])
-        current_types = st.session_state.filters.get('committee_type', [])
-        # Ensure current_types is a list
-        if not isinstance(current_types, list):
-            current_types = [current_types] if current_types else []
+        # Committee Category filter
+        category_options = filter_options_category.get('category', list(COMMITTEE_CATEGORIES.keys()))
+        current_categories = st.session_state.filters.get('category', ["Statewide"])
+        # Ensure current_categories is a list
+        if not isinstance(current_categories, list):
+            current_categories = [current_categories] if current_categories else []
         
-        # Default committee types
-        default_committee_types = [
-            "Governor",
-            "Attorney General",
-            "Auditor of State",
-            "Secretary of Agriculture",
-            "Secretary of State",
-            "Treasurer of State"
-        ]
+        # Default to Statewide if no category selected
+        default_categories = ["Statewide"] if not current_categories else current_categories
         
-        # Filter default to only include types that exist in available options
-        valid_defaults = [ct for ct in default_committee_types if ct in committee_type_options]
-        # Use current_types if they exist, otherwise use valid defaults
-        default_values = current_types if current_types else valid_defaults
-        
-        selected_types = st.multiselect(
-            "Committee Type",
-            options=committee_type_options,
-            default=default_values,
-            key=f"filter_committee_type_{st.session_state.filter_reset_counter}"
+        selected_categories = st.multiselect(
+            "Committee Category",
+            options=category_options,
+            default=default_categories,
+            key=f"filter_category_{st.session_state.filter_reset_counter}"
         )
-        if selected_types != current_types:
-            st.session_state.filters['committee_type'] = selected_types
+        if selected_categories != current_categories:
+            st.session_state.filters['category'] = selected_categories
             filter_changed = True
         
         party_options = [None] + filter_options_party.get('party', [])
@@ -994,8 +1059,35 @@ if st.session_state.selected_committee is None:
         if filter_changed:
             st.rerun()
         
-        # Footer in sidebar
+        # Calculate result count for mobile display
+        # Get filtered committees count
+        _, filtered_committees = get_filter_options(df_committees_filtered, st.session_state.filters)
+        committee_col = None
+        for col in ['committee_name', 'committee_nm', 'committee']:
+            if col in filtered_committees.columns:
+                committee_col = col
+                break
+        
+        result_count = 0
+        if committee_col:
+            result_count = len(filtered_committees[committee_col].dropna().unique())
+        
+        # Mobile "View Results" button
+        if st.button(f"View {result_count} Result{'s' if result_count != 1 else ''} 👉", type="primary", use_container_width=True, key="view_results_btn"):
+            # Inject JS to click the collapse button
+            components.html(
+                """
+                <script>
+                    const button = window.parent.document.querySelector('[data-testid="stSidebarCollapseButton"]');
+                    if (button) { button.click(); }
+                </script>
+                """,
+                height=0, width=0
+            )
+        
         st.markdown("---")
+        
+        # Footer in sidebar
         st.markdown("<div style='margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e0e0e0; line-height: 1.2;'>", unsafe_allow_html=True)
         
         # Disclaimer and copyright
@@ -1029,6 +1121,24 @@ if st.session_state.selected_committee is None:
         if col in final_filtered.columns:
             committee_col = col
             break
+    
+    # Check if filters are empty/default to show welcome message
+    filters_empty = (
+        st.session_state.filters.get('category') == ["Statewide"] and
+        st.session_state.filters.get('election_year') is None and
+        st.session_state.filters.get('party') is None and
+        st.session_state.filters.get('office') is None and
+        st.session_state.filters.get('district') is None and
+        st.session_state.filters.get('candidate_name') is None and
+        st.session_state.filters.get('committee_name') is None and
+        st.session_state.date_filter_value == DEFAULT_START_DATE
+    )
+    
+    if filters_empty:
+        # Welcome message
+        st.markdown("### ↖️ Start by searching in the sidebar")
+        st.markdown("Filter by committee info. Defaults to statewides with data since 2024")
+        st.markdown("")  # Spacing
     
     if committee_col:
         # Get unique committees with their info
@@ -1112,6 +1222,12 @@ if st.session_state.selected_committee is None:
 
 elif st.session_state.selected_committee:
     # DETAIL PAGE
+    # Back button at top of detail page
+    if st.button("← Back to Search", type="secondary", key="back_to_search_main"):
+        st.session_state.selected_committee = None
+        st.rerun()
+    st.markdown("<div style='margin-bottom: 1rem;'></div>", unsafe_allow_html=True)  # Small margin below button
+    
     # Get committee name column for detail page
     committee_col_detail = None
     for col in ['committee_name', 'committee_nm', 'committee']:
@@ -1210,9 +1326,6 @@ elif st.session_state.selected_committee:
             st.session_state.filter_date_end = None
         
         st.markdown("---")
-        if st.button("← Back to Search", use_container_width=True):
-            st.session_state.selected_committee = None
-            st.rerun()
         
         # Footer in sidebar
         st.markdown("---")
@@ -1715,7 +1828,7 @@ elif st.session_state.selected_committee:
                             plot_bgcolor='white',
                             paper_bgcolor='white'
                         )
-                        st.plotly_chart(fig_states_count, use_container_width=True)
+                        st.plotly_chart(fig_states_count, use_container_width=True, config={'displayModeBar': False})
             
             with row1_col2:
                 st.markdown("#### Top 5 States by Sum of Donations")
@@ -1750,7 +1863,7 @@ elif st.session_state.selected_committee:
                             plot_bgcolor='white',
                             paper_bgcolor='white'
                         )
-                        st.plotly_chart(fig_states_sum, use_container_width=True)
+                        st.plotly_chart(fig_states_sum, use_container_width=True, config={'displayModeBar': False})
             
             # Row 2: Two charts side by side
             row2_col1, row2_col2 = st.columns(2)
@@ -1794,7 +1907,7 @@ elif st.session_state.selected_committee:
                             plot_bgcolor='white',
                             paper_bgcolor='white'
                         )
-                        st.plotly_chart(fig_donors, use_container_width=True)
+                        st.plotly_chart(fig_donors, use_container_width=True, config={'displayModeBar': False})
                 elif 'contributor_final' in df_contributions_filtered.columns:
                     top_donors = df_contributions_filtered.groupby('contributor_final')[amount_col_contrib].sum().sort_values(ascending=False).head(5)
                     if not top_donors.empty:
@@ -1825,7 +1938,7 @@ elif st.session_state.selected_committee:
                             plot_bgcolor='white',
                             paper_bgcolor='white'
                         )
-                        st.plotly_chart(fig_donors, use_container_width=True)
+                        st.plotly_chart(fig_donors, use_container_width=True, config={'displayModeBar': False})
             
             with row2_col2:
                 st.markdown("#### Donations Over Time (Monthly)")
@@ -1847,7 +1960,7 @@ elif st.session_state.selected_committee:
                             plot_bgcolor='white',
                             paper_bgcolor='white'
                         )
-                        st.plotly_chart(fig_timeline, use_container_width=True)
+                        st.plotly_chart(fig_timeline, use_container_width=True, config={'displayModeBar': False})
             
             # Row 3: Top 5 Expenditure Recipients
             st.markdown("---")
@@ -1907,7 +2020,7 @@ elif st.session_state.selected_committee:
                             plot_bgcolor='white',
                             paper_bgcolor='white'
                         )
-                        st.plotly_chart(fig_recipients, use_container_width=True)
+                        st.plotly_chart(fig_recipients, use_container_width=True, config={'displayModeBar': False})
                 else:
                     st.info("Unable to determine recipient names from expenditure data.")
             else:
