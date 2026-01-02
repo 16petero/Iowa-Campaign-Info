@@ -284,9 +284,11 @@ try:
     if socrata_token is None:
         # Fallback to environment variable (for local development)
         socrata_token = os.getenv("SOCRATA_TOKEN", None)
+        print("Token Found")
     if socrata_token is None:
         # Final fallback - show warning but don't crash
         st.warning("⚠️ Socrata token not found. Please set SOCRATA_TOKEN in secrets or environment variables.")
+        print("DEBUG: Token MISSING")
         socrata_token = None
 except Exception as e:
     # If secrets don't exist (local run without secrets file), try environment variable
