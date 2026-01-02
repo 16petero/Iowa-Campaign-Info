@@ -324,7 +324,7 @@ def get_dataset_metadata():
     return None
 
 # Step 1: Load full committee dataset (cached indefinitely)
-@st.cache_data(show_spinner=False)  # Disable default spinner to show custom message
+@st.cache_data
 def load_committee_dataset():
     """Fetch all committee data for filtering."""
     try:
@@ -347,7 +347,7 @@ def get_committees_with_data_since(min_date):
             "smfg-ds7h",
             select="DISTINCT committee_nm",
             where=f"date >= '{date_str}'",
-            limit=200000
+            limit=500000
         )
         # Extract committee names from results
         committee_names = set()
@@ -406,7 +406,7 @@ def get_committee_latest_date(committee_name):
         return None
 
 # Step 2: Load committee-specific data
-@st.cache_data(ttl=3600, show_spinner=False)  # Cache for 1 hour, disable default spinner
+@st.cache_data(ttl=3600)  # Cache for 1 hour
 def load_committee_data(committee_name):
     """Fetch all contributions and expenditures for a specific committee."""
     try:
@@ -830,8 +830,7 @@ def get_filter_options(df_committees, current_filters, exclude_filter=None):
     return options, filtered_df
 
 # Load committee dataset
-with st.spinner("Fetching committee index..."):
-    df_committees = load_committee_dataset()
+df_committees = load_committee_dataset()
 
 if df_committees.empty:
     st.error("Unable to load committee data. Please check your connection.")
@@ -1073,10 +1072,10 @@ if st.session_state.selected_committee is None:
         if committee_col:
             result_count = len(filtered_committees[committee_col].dropna().unique())
         
-        # Static results count message
-        st.markdown(f"**{result_count} Result{'s' if result_count != 1 else ''} Found**")
-        
         st.markdown("---")
+        
+        # Static results count message at bottom of sidebar
+        st.markdown(f"**{result_count} Result{'s' if result_count != 1 else ''} Found**")
         
         # Footer in sidebar
         st.markdown("<div style='margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e0e0e0; line-height: 1.2;'>", unsafe_allow_html=True)
@@ -1229,7 +1228,7 @@ elif st.session_state.selected_committee:
     committee_info = df_committees[df_committees[committee_col_detail] == st.session_state.selected_committee].iloc[0] if not df_committees.empty and committee_col_detail else None
     
     # Load committee data
-    with st.spinner("Downloading financial records..."):
+    with st.spinner(f"Loading data for {st.session_state.selected_committee}..."):
         df_contributions, df_expenditures = load_committee_data(st.session_state.selected_committee)
     
     # Process data
@@ -1491,8 +1490,8 @@ elif st.session_state.selected_committee:
     # Latest Data Available line (from unfiltered data, above metrics)
     if latest_data_date_unfiltered:
         st.markdown(f"**Latest Data Available:** {latest_data_date_unfiltered}")
-        st.markdown("**↖ Use the sidebar to filter by year or date.**")
-    else: 
+        st.markdown("### ↖️ Use the sidebar to filter by year or date.")
+    else:
         st.markdown("**Latest Data Available:** NO DATA")
     
     # Calculate Cash on Hand to match Ending COH
@@ -2024,13 +2023,12 @@ elif st.session_state.selected_committee:
         st.subheader("📄 PDF Report")
         try:
             coh_data_for_pdf = st.session_state.get('coh_data_for_pdf', None)
-            with st.spinner("Compiling PDF report..."):
-                pdf_buffer = generate_pdf_report(
-                    name, committee_info, total_raised, total_spent, cash_on_hand,
-                    latest_data_date_unfiltered, df_contributions_filtered, df_expenditures_filtered,
-                    coh_data_for_pdf, starting_coh, ending_coh, amount_col_contrib, amount_col_expend,
-                    candidate_name=name, earliest_date=earliest_date, latest_date=latest_date
-                )
+            pdf_buffer = generate_pdf_report(
+                name, committee_info, total_raised, total_spent, cash_on_hand,
+                latest_data_date_unfiltered, df_contributions_filtered, df_expenditures_filtered,
+                coh_data_for_pdf, starting_coh, ending_coh, amount_col_contrib, amount_col_expend,
+                candidate_name=name, earliest_date=earliest_date, latest_date=latest_date
+            )
             st.download_button(
                 label="Download Report",
                 data=pdf_buffer.getvalue(),
