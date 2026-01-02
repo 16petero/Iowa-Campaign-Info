@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from sodapy import Socrata
-from datetime import datetime
+from datetime import datetime, date
 import plotly.express as px
 import plotly.graph_objects as go
 import requests
@@ -12,11 +12,15 @@ from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from io import BytesIO
+import os
+
+# Constants
+DEFAULT_START_DATE = date(2024, 1, 1)
 
 # Page configuration
 st.set_page_config(
-    page_title="Iowa Campaign Finance Dashboard",
-    page_icon="📊",
+    page_title="Peter's IA $ App",
+    page_icon="💲",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -291,8 +295,24 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize Socrata client
-client = Socrata("data.iowa.gov", app_token="iBjweussDQzKDBLjqCKCqIjBu", timeout=60)
+# Initialize Socrata client with secrets management
+try:
+    # Try to get token from Streamlit secrets (for deployment)
+    socrata_token = st.secrets.get("SOCRATA_TOKEN", None)
+    if socrata_token is None:
+        # Fallback to environment variable (for local development)
+        socrata_token = os.getenv("SOCRATA_TOKEN", None)
+    if socrata_token is None:
+        # Final fallback - show warning but don't crash
+        st.warning("⚠️ Socrata token not found. Please set SOCRATA_TOKEN in secrets or environment variables.")
+        socrata_token = None
+except Exception as e:
+    # If secrets don't exist (local run without secrets file), try environment variable
+    socrata_token = os.getenv("SOCRATA_TOKEN", None)
+    if socrata_token is None:
+        st.warning("⚠️ Socrata token not found. Please set SOCRATA_TOKEN in secrets or environment variables.")
+
+client = Socrata("data.iowa.gov", app_token=socrata_token, timeout=60)
 
 # Initialize session state
 if 'selected_committee' not in st.session_state:
@@ -673,10 +693,16 @@ def get_filter_options(df_committees, current_filters, exclude_filter=None):
     
     # Apply existing filters progressively, but exclude the filter we're getting options for
     if current_filters.get('committee_type') and exclude_filter != 'committee_type':
-        for col in ['committee_type', 'type', 'type_nm', 'committee_type_nm']:
-            if col in filtered_df.columns:
-                filtered_df = filtered_df[filtered_df[col].astype(str) == str(current_filters['committee_type'])]
-                break
+        # Handle both single value (old) and list (new multiselect)
+        committee_types = current_filters['committee_type']
+        if not isinstance(committee_types, list):
+            committee_types = [committee_types] if committee_types else []
+        
+        if committee_types:
+            for col in ['committee_type', 'type', 'type_nm', 'committee_type_nm']:
+                if col in filtered_df.columns:
+                    filtered_df = filtered_df[filtered_df[col].astype(str).isin([str(ct) for ct in committee_types])]
+                    break
     
     if current_filters.get('election_year') and exclude_filter != 'election_year':
         # Try different possible column names
@@ -798,7 +824,7 @@ current_page = "Committee View" if st.session_state.selected_committee else "Com
 top_bar_html = f"""
 <div class="top-bar">
     <div class="top-bar-content">
-        <div class="top-bar-title">Iowa Finance Viewer</div>
+        <div class="top-bar-title">Peter's IA Finance App</div>
         <div class="top-bar-center">
             <div class="top-bar-page">{current_page}</div>
         </div>
@@ -824,8 +850,17 @@ if st.session_state.selected_committee is None:
     
     # Initialize filters in session state
     if 'filters' not in st.session_state:
+        # Default committee types for multiselect
+        default_committee_types = [
+            "Governor",
+            "Attorney General",
+            "Auditor of State",
+            "Secretary of Agriculture",
+            "Secretary of State",
+            "Treasurer of State"
+        ]
         st.session_state.filters = {
-            'committee_type': None,
+            'committee_type': default_committee_types,  # Now a list for multiselect
             'election_year': None,
             'party': None,
             'office': None,
@@ -844,10 +879,6 @@ if st.session_state.selected_committee is None:
         except ValueError:
             return 0
     
-    # Minimum data published date filter - outside sidebar for scope
-    if 'filter_min_date' not in st.session_state:
-        st.session_state.filter_min_date = datetime(2025, 1, 1).date()
-    
     # Sidebar for filters
     with st.sidebar:
         # Header with inline Clear button
@@ -857,8 +888,17 @@ if st.session_state.selected_committee is None:
         with header_col2:
             st.write("")  # Spacer
             if st.button("Clear", use_container_width=True, key="clear_filters_btn_inline"):
+                # Reset all filters
+                default_committee_types = [
+                    "Governor",
+                    "Attorney General",
+                    "Auditor of State",
+                    "Secretary of Agriculture",
+                    "Secretary of State",
+                    "Treasurer of State"
+                ]
                 st.session_state.filters = {
-                    'committee_type': None,
+                    'committee_type': default_committee_types,
                     'election_year': None,
                     'party': None,
                     'office': None,
@@ -866,30 +906,36 @@ if st.session_state.selected_committee is None:
                     'candidate_name': None,
                     'committee_name': None
                 }
+                # Reset date filter to default
+                st.session_state.date_filter_value = DEFAULT_START_DATE
                 st.session_state.filter_reset_counter += 1
                 st.rerun()
         
-        # Filter by Activity Since date input
+        # Filter by Activity Since date input - using dynamic key for reset capability
+        # Initialize default if not set
+        if 'date_filter_value' not in st.session_state:
+            st.session_state.date_filter_value = DEFAULT_START_DATE
+        
+        # Use dynamic key so we can reset it
         filter_min_date = st.date_input(
             "Filter by Activity Since",
-            value=st.session_state.filter_min_date,
+            value=st.session_state.date_filter_value,
             min_value=datetime(2000, 1, 1).date(),
-            key="filter_min_date_input"
+            key=f"date_filter_{st.session_state.filter_reset_counter}"
         )
-        if filter_min_date != st.session_state.filter_min_date:
-            st.session_state.filter_min_date = filter_min_date
-            st.rerun()
+        # Store the current value in our own variable (not the widget's key)
+        st.session_state.date_filter_value = filter_min_date
         
         st.markdown("---")
         
         # Get committees with data since the selected date
         committees_with_data = set()
-        if st.session_state.filter_min_date:
-            committees_with_data = set(get_committees_with_data_since(st.session_state.filter_min_date))
+        if st.session_state.date_filter_value:
+            committees_with_data = set(get_committees_with_data_since(st.session_state.date_filter_value))
         
         # Filter df_committees by minimum date if filter is enabled
         df_committees_filtered = df_committees.copy()
-        if st.session_state.filter_min_date and committees_with_data:
+        if st.session_state.date_filter_value and committees_with_data:
             # Filter to only committees with data since the selected date
             committee_col = None
             for col in ['committee_name', 'committee_nm', 'committee']:
@@ -912,16 +958,35 @@ if st.session_state.selected_committee is None:
         # Track if any filter changed
         filter_changed = False
         
-        committee_type_options = [None] + filter_options_type.get('committee_type', [])
-        current_type = st.session_state.filters.get('committee_type')
-        selected_type = st.selectbox(
+        committee_type_options = filter_options_type.get('committee_type', [])
+        current_types = st.session_state.filters.get('committee_type', [])
+        # Ensure current_types is a list
+        if not isinstance(current_types, list):
+            current_types = [current_types] if current_types else []
+        
+        # Default committee types
+        default_committee_types = [
+            "Governor",
+            "Attorney General",
+            "Auditor of State",
+            "Secretary of Agriculture",
+            "Secretary of State",
+            "Treasurer of State"
+        ]
+        
+        # Filter default to only include types that exist in available options
+        valid_defaults = [ct for ct in default_committee_types if ct in committee_type_options]
+        # Use current_types if they exist, otherwise use valid defaults
+        default_values = current_types if current_types else valid_defaults
+        
+        selected_types = st.multiselect(
             "Committee Type",
             options=committee_type_options,
-            index=get_index_for_value(committee_type_options, current_type),
+            default=default_values,
             key=f"filter_committee_type_{st.session_state.filter_reset_counter}"
         )
-        if selected_type != current_type:
-            st.session_state.filters['committee_type'] = selected_type
+        if selected_types != current_types:
+            st.session_state.filters['committee_type'] = selected_types
             filter_changed = True
         
         party_options = [None] + filter_options_party.get('party', [])
@@ -993,12 +1058,18 @@ if st.session_state.selected_committee is None:
         st.markdown("<div style='margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e0e0e0; line-height: 1.2;'>", unsafe_allow_html=True)
         
         # Disclaimer and copyright
-        st.caption("Disclaimer: Dev mode. Data from public sources.")
-        st.caption("© Peter Owens 2026")
+        st.markdown(
+            "<p style='color: #000000; font-size: 0.85rem;'>Disclaimer: Dev mode. Data from public sources.</p>",
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            "<p style='color: #000000; font-size: 0.85rem;'>© Peter Owens 2026</p>",
+            unsafe_allow_html=True
+        )
         
         # Links
         st.markdown(
-            "<small style='color: #666;'>"
+            "<small style='color: #000000;'>"
             "<a href='https://x.com/pcowens_' target='_blank' style='color: #1f77b4; text-decoration: none; margin-right: 0.5rem;'>X (Twitter)</a> | "
             "<a href='mailto:16petero@gmail.com' style='color: #1f77b4; text-decoration: none; margin-left: 0.5rem;'>Email</a>"
             "</small>",
@@ -1207,12 +1278,18 @@ elif st.session_state.selected_committee:
         st.markdown("<div style='margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e0e0e0; line-height: 1.2;'>", unsafe_allow_html=True)
         
         # Disclaimer and copyright
-        st.caption("Disclaimer: Dev mode. Data from public sources.")
-        st.caption("© Peter Owens 2026")
+        st.markdown(
+            "<p style='color: #000000; font-size: 0.85rem;'>Disclaimer: Dev mode. Data from public sources.</p>",
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            "<p style='color: #000000; font-size: 0.85rem;'>© Peter Owens 2026</p>",
+            unsafe_allow_html=True
+        )
         
         # Links
         st.markdown(
-            "<small style='color: #666;'>"
+            "<small style='color: #000000;'>"
             "<a href='https://x.com/pcowens_' target='_blank' style='color: #1f77b4; text-decoration: none; margin-right: 0.5rem;'>X (Twitter)</a> | "
             "<a href='mailto:16petero@gmail.com' style='color: #1f77b4; text-decoration: none; margin-left: 0.5rem;'>Email</a>"
             "</small>",
